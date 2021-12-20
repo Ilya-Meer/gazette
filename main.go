@@ -3,20 +3,19 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	readability "github.com/go-shiori/go-readability"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -51,7 +50,7 @@ type errMsg struct {
 
 type storiesMsg []story
 
-type storyBytesMsg []byte
+type storyContentMsg string
 
 type story struct {
 	Id          int    `json:"id"`
@@ -107,13 +106,13 @@ func getTopStories() tea.Msg {
 
 func (m Model) fetchStory() tea.Cmd {
 	return func() tea.Msg {
-		res, _ := http.Get(m.selected)
-		bytes, err := ioutil.ReadAll(res.Body)
+		article, err := readability.FromURL(m.selected, 30*time.Second)
+
 		if err != nil {
 			m.err = err
 		}
 
-		return storyBytesMsg(bytes)
+		return storyContentMsg(article.TextContent)
 	}
 }
 
@@ -150,24 +149,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 
-	case storyBytesMsg:
+	case storyContentMsg:
 		m.selected = ""
+		m.storyText = string(msg)
 
-		converter := md.NewConverter("", true, nil)
-
-		markdown, err := converter.ConvertString(string(msg))
+		md, err := glamour.Render(m.storyText, "dark")
 		if err != nil {
 			m.err = err
 			return m, tea.Quit
 		}
 
-		m.storyText = markdown
-		if err != nil {
-			m.err = err
-			return m, tea.Quit
-		}
-
-		md, _ := glamour.Render(m.storyText, "dark")
 		m.viewport.GotoTop()
 		m.viewport.SetContent(md)
 
